@@ -1,0 +1,282 @@
+#include <stdio.h>
+int x, y;
+bool wall;
+int polarity;
+int MAZE[16][16] = {
+	{14,13,12,11,10,9,8,7,7,8,9,10,11,12,13,14},
+	{13,12,11,10,9,8,7,6,6,7,8,9,10,11,12},
+	{12,11,10,9,8,7,6,5,5,6,7,8,9,10,11,12},
+	{11,10,9,8,7,6,5,4,4,5,6,7,8,9,10,11},
+	{10,9,8,7,6,5,4,3,3,4,5,6,7,8,9,10},
+	{9,8,7,6,5,4,3,2,2,3,4,5,6,7,8,9},
+	{8,7,6,5,4,3,2,1,1,2,3,4,5,6,7,8},
+	{7,6,5,4,3,2,1,0,0,1,2,3,4,5,6,7},
+	{7,6,5,4,3,2,1,0,0,1,2,3,4,5,6,7},
+	{8,7,6,5,4,3,2,1,1,2,3,4,5,6,7,8},
+	{9,8,7,6,5,4,3,2,2,3,4,5,6,7,8,9},
+	{10,9,8,7,6,5,4,3,3,4,5,6,7,8,9,10},
+	{11,10,9,8,7,6,5,4,4,5,6,7,8,9,10,11},
+	{12,11,10,9,8,7,6,5,5,6,7,8,9,10,11,12},
+	{13,12,11,10,9,8,7,6,6,7,8,9,10,11,12},
+	{14,13,12,11,10,9,8,7,7,8,9,10,11,12,13,14},
+};
+bool leftTurn, rightTurn = false;
+
+int directionArr[4]={
+  1,//NORTH
+  2,//EASTs
+  3,//SOUTH
+  4 //WEST
+};
+
+struct Point
+{
+	int x;
+	int y;
+};
+//Fuctions:
+void search(Point pos, Point &tarPos);
+int locate(Point getTar, int &setFlag);
+int move(int getFlag, int getPolarity);
+int update(Point getPos);
+bool oriant(bool checkLeft, bool checkRight,int setPolarity);
+bool wallCheck (int IRindex, bool isWall);
+
+//LEFT SIDE MOTOR
+int motorLeftFWD = 7;// left side motor speed, forward
+int motorLeftBCK = 7;// left side motor speed, back
+int engineLeft =8; //left side motor power input
+//RIGHT SIDE MOTOR
+int motorRightFWD = 7;// right side motor speed, forward
+int motorRightBCK = 7;// right side motor speed, back
+int engineRight =8;//right side motor power input
+
+//IR SENSOR CONTROLS
+int sensorFront = 4;
+int sensorLeft = 4;
+int sensorRight = 4;
+
+ 
+void setup() {
+//ESTABLISHING OUTPUTS
+ pinMode(motorLeftFWD, OUTPUT);
+ pinMode(motorLeftBCK, OUTPUT);
+ pinMode(motorRightFWD, OUTPUT);
+ pinMode(motorRightBCK, OUTPUT);
+ //ESTABLISHING IR INPUTS
+ pinMode(sensorFront, INPUT);
+ pinMode(sensorLeft, INPUT);
+ pinMode(sensorRight, INPUT);
+ //SETTING MOTOR SPEEDS
+ analogWrite(engineLeft, 50);
+ analogWrite(engineRight,50);
+}
+
+void carStart(){
+  //MOUSE MOVES FORWARD
+  digitalWrite(motorLeftFWD, HIGH);
+  digitalWrite(motorLeftBCK, LOW);
+  digitalWrite(motorRightFWD, HIGH);
+  digitalWrite(motorRightBCK, LOW);
+}
+
+void carHalt(){
+  digitalWrite(motorLeftFWD, LOW);
+  digitalWrite(motorLeftBCK, LOW);
+  digitalWrite(motorRightFWD, LOW);
+  digitalWrite(motorRightBCK, LOW);
+}
+
+void turnLeft(){
+  digitalWrite(motorLeftFWD, HIGH);
+  digitalWrite(motorLeftBCK, LOW);
+  digitalWrite(motorRightFWD, LOW);
+  digitalWrite(motorRightBCK, HIGH);
+  rightTurn =true;
+
+}
+
+void turnRight(){
+  digitalWrite(motorLeftFWD, LOW);
+  digitalWrite(motorLeftBCK, HIGH);
+  digitalWrite(motorRightFWD, HIGH);
+  digitalWrite(motorRightBCK, LOW);
+  leftTurn =true;
+
+}
+bool isCarRunning = false;
+
+void loop() {
+  int frontSensor = digitalRead(sensorFront);
+  int leftSensor = digitalRead(sensorLeft);
+  int rightSensor = digitalRead(sensorRight);
+  int i, j;
+	int goal = 1;
+	Point pos = { x,y };
+	pos.x = 0; pos.y = 0;
+	Point tarPos;
+  int dirFacing = 1; 
+//IGNITION
+  if(!isCarRunning){
+    if(frontSensor == HIGH){
+      carStart();
+      isCarRunning = true;
+    }
+  }
+//SEARCH BEGINS 
+	while (MAZE[pos.y][pos.x] != 1) {//REMINDER: target only equals 1 due to 0 causing rollover errors; once wall detection has been codified, change this to 0;
+		if (MAZE[pos.y][pos.x] != goal) {
+			search(pos, tarPos);
+      int passFlag;
+			locate(tarPos,passFlag);
+      //carHalt();//consider moving this depending on preformance
+      move(passFlag, polarity);//move to target position
+			update(pos);
+			pos = tarPos;
+		}
+	}
+//SEARCH ENDS 
+};
+void search(Point pos, Point &tarPos) {//function decieds which grid square has the lowest value
+	int i;
+	Point westDir = { pos.x - 1,pos.y };
+	Point eastDir = { pos.x + 1,pos.y };
+	Point northDir = { pos.x, pos.y - 1 };
+	Point southDir = { pos.x,pos.y + 1 };
+
+	struct Point temp[4];//list of all 4 directions, mutated from pos
+	temp[0] = northDir;
+	temp[1] = eastDir;
+	temp[2] = southDir;
+	temp[3] = westDir;
+  int IRindex = 0;
+	//if mouse is NOT at goal
+	for (i = 0; i < 4; i++) {//run a check on all 4 directions
+		if ((MAZE[temp[i].y][temp[i].x]) < MAZE[pos.y][pos.x] && (MAZE[temp[i].y][temp[i].x] > 0)) {
+
+			if (!wall) {//check for walls here;
+				tarPos = temp[i];// returns selected target
+				break;
+			}
+      else if(wall){
+        (MAZE[temp[i].y][temp[i].x])++;
+      }
+		}
+	}
+}
+int locate(Point getTar, int &setFlag) {//Function decieds which derection to move towards 
+	int flag1, flag2, flag3, flag4;//flags that, when passed to move(), dictate the motor's behavior.
+	flag1 = 0;//NORTH
+	flag2 = 1;//EAST
+	flag3 = 2;//SOUTH
+	flag4 = -1;//WEST
+	//int flagSet[4] = { flag1, flag2, flag3, flag4 };
+	if (MAZE[getTar.y][getTar.x] == MAZE[y-1][x]) {//move north
+		x = x; y = y-1;
+		return(flag1);
+	}
+	else if (MAZE[getTar.y][getTar.x] == MAZE[y][x +1]) {// move east
+		x = x + 1; y = y;
+		return(flag2);
+	}
+	//REMINDER: the y-axis for the maze is REVSERSED; So y++ moves SOUTH, and y-- moves NORTH
+	else if (MAZE[getTar.y][getTar.x] == MAZE[y + 1][x]){//move south
+		x = x; y = y + 1;
+		return(flag3);
+	}
+	else if (MAZE[getTar.y][getTar.x] == MAZE[y][x+1]) {//move west
+		x = x-1; y = y;
+		return(flag4);
+	}
+}
+int update(Point getPos) {
+	int i, j;
+	for (i = 0; i < 15; i++) {
+		for (j = 0; j < 15; j++) {
+			if (MAZE[i][j] == MAZE[getPos.y][getPos.x]) {
+				MAZE[i][j]=MAZE[i][j]++;
+			}
+		}
+	}
+	return 0;
+}
+int move(int getFlag, int getPolarity){
+    if (getFlag!=getPolarity){
+      if(getFlag>getPolarity){//target is to the right
+      turnRight();
+      oriant(false,true,getPolarity);
+      //set delay to allow the mouse enough time to move
+      move(getFlag,getPolarity);
+      }
+      else if (getFlag<getPolarity){//target is to the left
+        turnLeft();
+        oriant(true,false,getPolarity);
+      //set delay to allow the mouse enough time to move
+        move(getFlag, getPolarity);
+      }
+    }
+    else{
+      carStart();
+      //set delay to allow the mouse enough time to move
+    }
+}
+bool wallCheck (int IRindex, bool isWall){
+  switch (IRindex){
+    case 0:
+      if(sensorLeft == LOW){
+        IRindex++;
+        wallCheck(IRindex, true);
+      }
+      else{
+        isWall = false;
+      }
+      break;
+    case 1:
+      if(sensorFront == LOW){
+        IRindex++;
+        wallCheck(IRindex, true);
+      }
+      else{
+        isWall = false;
+      }
+      break;
+    case 2:
+      if(sensorRight == LOW){
+        IRindex++;
+        wallCheck(IRindex, true);
+      }
+      break;
+    case 3:
+      break;
+      //return "turn around" command prompt
+  }
+}
+bool oriant(bool checkLeft, bool checkRight,int setPolarity){
+// function for keeping track of which way the mouse is facing
+//polarity =0: facing forward
+//polarity = 1: facing Right
+//polarity = -1: facing Left
+//polarity = 2/-2: facing rear 
+  if (checkRight==true){
+    if ((setPolarity<2)&&(setPolarity>=-1)){
+      setPolarity++;
+      checkRight =false;
+    }
+    else if (setPolarity>=2){//rollover 
+      setPolarity = -1;
+      checkRight = false;
+    }
+    return checkRight;
+  }
+  else if (checkLeft==true){
+    if (setPolarity >-2){
+      setPolarity--;
+      checkLeft = false;
+    }
+    else if ( setPolarity<=-2){//rollover
+      setPolarity = 1;
+      checkLeft = false;
+    }
+    return checkLeft;
+  }
+ }
